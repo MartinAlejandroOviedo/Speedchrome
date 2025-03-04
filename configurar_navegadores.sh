@@ -7,11 +7,11 @@ if [[ "$ARCH" != "x86_64" ]]; then
     exit 1
 fi
 
-# Solicitar confirmación antes de continuar
-echo "Este script realizará los siguientes cambios en los navegadores compatibles:"
-echo " - Establecer el límite de memoria de Chromium a 4 GB"
-echo " - Deshabilitar la precarga de páginas"
-echo " - Deshabilitar la aceleración de hardware"
+# Solicitar confirmación
+echo "Este script realizará los siguientes cambios:"
+echo " - Establecer límite de memoria de Chromium"
+echo " - Deshabilitar precarga de páginas"
+echo " - Deshabilitar aceleración de hardware"
 echo
 read -p "¿Desea continuar? (S/N): " respuesta
 
@@ -21,72 +21,80 @@ if [[ "$respuesta" == "N" ]]; then
     exit 0
 fi
 
-# Lista de navegadores
-browsers=("google-chrome" "chromium" "brave-browser" "opera" "microsoft-edge")
-
-# Función para aplicar configuraciones a un navegador basado en Chromium
-configure_browser() {
-    local browser=$1
-    echo "Procesando configuraciones para el navegador: $browser"
-
-    # Ruta al directorio de configuración del usuario
-    config_dir="$HOME/.config/$browser"
-
-    if [[ ! -d "$config_dir" ]]; then
-        echo "Directorio de configuración para $browser no encontrado. Saltando..."
-        return
-    fi
-
-    # Crear o modificar el archivo de banderas de lanzamiento
-    launch_flags_file="$config_dir/launch_flags.conf"
+# Función para detectar memoria
+detectar_memoria() {
+    total_memoria=$(free -m | awk '/^Mem:/ {print $2}')
+    max_memoria=$((total_memoria / 2))
     
-    # Crear el archivo si no existe
-    if [[ ! -f "$launch_flags_file" ]]; then
-        touch "$launch_flags_file"
+    read -p "Memoria a asignar (MB, máximo $max_memoria): " memoria_asignada
+    memoria_asignada=${memoria_asignada:-$max_memoria}
+    
+    if [[ ! "$memoria_asignada" =~ ^[0-9]+$ ]] || (( memoria_asignada > max_memoria )); then
+        echo "Usando valor máximo."
+        memoria_asignada=$max_memoria
     fi
 
-    # Deshabilitar la aceleración de hardware
-    if ! grep -q "--disable-gpu" "$launch_flags_file"; then
-        echo "--disable-gpu" >> "$launch_flags_file"
-        echo "Deshabilitando la aceleración de hardware para $browser..."
-    else
-        echo "La aceleración de hardware ya está deshabilitada para $browser."
-    fi
-
-    # Deshabilitar la precarga de páginas
-    if ! grep -q "--disable-preloading" "$launch_flags_file"; then
-        echo "--disable-preloading" >> "$launch_flags_file"
-        echo "Deshabilitando la precarga de páginas para $browser..."
-    else
-        echo "La precarga de páginas ya está deshabilitada para $browser."
-    fi
-
-    # Establecer el límite de memoria a 4 GB si es 32gb 32768
-    # Nota: No todos los navegadores soportan esta configuración directamente
-    # Aquí se establece una variable de entorno que podría ser utilizada por el navegador
-    export CHROME_MAX_MEMORY=4096
-    echo "Estableciendo el límite de memoria a 4 GB para $browser..."
-
-    echo "Configuración aplicada para $browser."
+    export CHROME_MAX_MEMORY=$memoria_asignada
 }
 
-# Aplicar configuraciones a cada navegador compatible
+# Navegadores compatibles
+browsers=("google-chrome" "chromium" "brave-browser" "opera" "microsoft-edge" "vivaldi" "yandex" "epic-browser" "colibri" "srware-iron" "comodo-dragon" "torch" "blisk" "coccoc" "slimjet")
+
+# Función de configuración
+configure_browser() {
+    local browser=$1
+    config_dir="$HOME/.config/$browser"
+    
+    [ ! -d "$config_dir" ] && return  # Saltar si no existe
+    
+    launch_flags_file="$config_dir/launch_flags.conf"
+    touch "$launch_flags_file"
+    
+    grep -q "--disable-gpu" "$launch_flags_file" || echo "--disable-gpu" >> "$launch_flags_file"
+    grep -q "--disable-preloading" "$launch_flags_file" || echo "--disable-preloading" >> "$launch_flags_file"
+    
+    echo "Configurado $browser con ${CHROME_MAX_MEMORY}MB"
+}
+
+# Proceso principal
+detectar_memoria
 for browser in "${browsers[@]}"; do
     configure_browser "$browser"
 done
 
-echo
-echo "Los cambios se han realizado correctamente en los navegadores detectados."
-echo "Por favor, reinicie los navegadores para que los cambios surtan efecto."
-echo
-read -p "¿Desea reiniciar los navegadores ahora? (S/N): " reiniciar
-
+# Reinicio de navegadores
+read -p "¿Reiniciar navegadores ahora? (S/N): " reiniciar
 reiniciar=$(echo "$reiniciar" | tr '[:lower:]' '[:upper:]')
+
 if [[ "$reiniciar" == "S" ]]; then
-    for proc in "chrome" "chromium" "brave" "opera" "microsoft-edge"; do
-        pkill -f "$proc" 2>/dev/null
+    echo "Cerrando navegadores..."
+    
+    # Lista actualizada de procesos coincidentes
+    processes=(
+        "chrome"                # Google Chrome
+        "chromium"              # Chromium
+        "brave"                 # Brave
+        "opera"                 # Opera
+        "msedge"                # Microsoft Edge
+        "vivaldi"               # Vivaldi
+        "yandex_browser"        # Yandex
+        "epic"                  # Epic
+        "colibri"               # Colibri
+        "iron"                  # SRWare Iron
+        "dragon"                # Comodo Dragon
+        "torch"                 # Torch
+        "blisk"                 # Blisk
+        "coccoc"                # Cốc Cốc
+        "slimjet"               # Slimjet
+    )
+    
+    for proc in "${processes[@]}"; do
+        if pkill -f "$proc"; then
+            echo "✓ Cerrado: $proc"
+        else
+            echo "× No en ejecución: $proc"
+        fi
     done
-    echo "Los navegadores se están reiniciando..."
-else
-    echo "Por favor, reinicie los navegadores manualmente para aplicar los cambios."
+    
+    echo "¡Reinicia manualmente los navegadores para aplicar cambios!"
 fi
